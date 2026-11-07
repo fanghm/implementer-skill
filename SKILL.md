@@ -171,6 +171,14 @@ After completion verify the branch has commits (`git log <lane-branch> --oneline
 no commits = worker wrote to the wrong directory. Merge lane branches only after all
 verified — you merge, you never cross-integrate other agents' work.
 
+**Model pinning (#4338).** A subagent's agent-level `model:` overrides the session
+default, so a provider that is outside your account's usage plan fails at launch with
+402 *while the orchestrator's own model keeps working* — and a `tasks[]` fan-out that
+omits `model` fails silently, which drops the review gate without any error surfacing.
+Therefore: (1) pass `model:` explicitly on every `runs.run` / `tasks[]` item, and
+(2) keep the agent header's `model:` on an available provider — `sync.sh --check`
+now fails on a banned pi provider instead of waiting for the 402 at dispatch time.
+
 ### 1b. Phase Gate (MANDATORY)
 
 - [ ] Every lane done, branch has commits, targeted checks pass
