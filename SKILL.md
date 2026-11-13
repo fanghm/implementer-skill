@@ -175,8 +175,10 @@ verified — you merge, you never cross-integrate other agents' work.
 default, so a provider that is outside your account's usage plan fails at launch with
 402 *while the orchestrator's own model keeps working* — and a `tasks[]` fan-out that
 omits `model` fails silently, which drops the review gate without any error surfacing.
-Therefore: (1) pass `model:` explicitly on every `runs.run` / `tasks[]` item, and
-(2) keep the agent header's `model:` on an available provider — `sync.sh --check`
+Therefore: (1) pass `model: "inherit"` on every `runs.run` / `tasks[]` item so each child
+uses the orchestrator's current model — never hardcode a provider model, because the
+account's plan/quota is per-provider and a hardcoded model can 402 or silently drop the
+review gate, and (2) keep the agent header's `model:` on an available provider — `sync.sh --check`
 now fails on a banned pi provider instead of waiting for the 402 at dispatch time.
 
 ### 1b. Phase Gate (MANDATORY)
