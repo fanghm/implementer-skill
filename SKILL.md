@@ -15,6 +15,7 @@ five-angle parallel review, delegates fixes, creates a PR, loops on CI until gre
 - §C Local Verification Policy — CI-backed vs CI-absent, who runs what
 - §D Worktree pool — anchor rationale, migration, retention/sweep rules
 - §E CI failure triage — classification table, Mergeability Preflight detail
+- §F Large-input tasks — read map + sliced reads + interleave (the #4522 anti-pattern)
 
 ## When to Use / Not Use
 
@@ -136,6 +137,22 @@ ran a forbidden check → record `⚠ SCOPE VIOLATION` in your report; do not re
    the Phase Gate (CI-absent) — never a worker. Mode and rationale: REFERENCE.md §C.
 3. Commit (`caveman-commit` style), self-review, proceed to Phase Gate
 
+**Input Budget — read by slice, never whole-file (templates: REFERENCE.md §F).** Open every
+lane with a one-line read map ("I will read X because the diff touches Y"), then slice:
+the AGENTS.md conditional table pulls at most 3 guides per lane; `development-checklist.md`
+(921 lines) and `REFERENCE.md` are read by matched section only — grep the heading first,
+then offset/limit; whole-file reads of big docs are forbidden. Soft cap: ~15k tokens of
+pre-work reading per lane (pending calibration from lane token data — #4522). Reason: the
+#4522 failure mode is a 30-minute lane spending the whole window grepping and committing
+nothing — a budget turns "explore forever" into "explore, then land".
+
+**Early-commit cadence — continuity over tidiness.** An uncommitted understanding is worth
+zero the moment a lane is killed. First commit (skeleton, migration stub, or empty impl +
+TODO notes is fine) within 0.5× budget; a compilable second version within 0.83×
+(30 min → 15/25; 60 → 30/50; 90 → 45/75). `wip:`-prefixed intermediate commits are
+explicitly allowed — the Phase 3 squash merge collects them. Never stay empty-handed at
+timeout because a commit did not feel atomic: the commit is the unit of resumability.
+
 **Delegation does not move the gate** — you still own Phase Gate verification of the
 merged result.
 
@@ -171,6 +188,30 @@ After completion verify the branch has commits (`git log <lane-branch> --oneline
 no commits = worker wrote to the wrong directory. Merge lane branches only after all
 verified — you merge, you never cross-integrate other agents' work.
 
+**Lane budget & timeout — set at dispatch, never guessed (#4522):**
+
+| Task shape | Budget |
+| --- | --- |
+| Exploratory / small diff / single-file fix | 30 min (default) |
+| New table + migration + routes + tests | 60 min |
+| Cross-client contract change (backend + web/mobile) | 90 min (hard cap) |
+
+Dispatch at 60 min (do not wait for a timeout to rescue) when ANY of: new table/migration,
+≥2 new pages, cross-client contract, ≥4 guides triggered. The 90-minute ceiling is enforced
+by `sync.sh --check` (any platform `timeoutMs > 5400000` fails) — it is not a convention.
+On platforms that support tool budgets, dispatch lanes with `{"soft": 80, "hard": 140}`
+where hard blocks READ-CLASS tools only (never a mutation): soft means "stop exploring, land
+what you have", hard makes exploration actually stop. Never shrink a hard budget until the
+worker cannot read its own implementation files — that produces fake-done, not scope control.
+
+**Handoff file — `<repo>.wt-pool/handoff/<slot>.md` (every lane, every exit path).** Rewrite
+it after every commit and at least every 15 minutes, ≤10 lines: done / next / key
+files:lines / open questions / commands run + conclusion. A hard kill then leaves the
+latest understanding, not a stale one. It lives outside the repo (git-ignored), so it never
+enters a PR or diff. HARD RULE: no sensitive content of any kind (student data, credentials,
+diagnoses, record bodies) — it is local plaintext the next agent reads into context
+(extends AGENTS.md rule 8).
+
 **Model pinning (#4338).** A subagent's agent-level `model:` overrides the session
 default, so a provider that is outside your account's usage plan fails at launch with
 402 *while the orchestrator's own model keeps working* — and a `tasks[]` fan-out that
@@ -197,6 +238,10 @@ deferred gate to (a)/(b)/(c) above. Aggregate into `Lane Scope Compliance` +
 `Deferred Gates (decisions)`. Repeat offenders = the dispatch prompt was missing the
 contract — fix the prompt.
 
+Also verify each lane's continuity artifacts: the report must carry first-commit time and
+cumulative commit count; a lane with zero commits is `BLOCKED` — "done but uncommitted"
+is not DONE.
+
 ## Phase 2: Review-Fix Loop (max 20 rounds)
 
 **Precondition — the reviewer must be able to read the diff.** §B allows `git diff` /
@@ -221,9 +266,17 @@ Each round:
    validation ③ Simplicity & maintainability ④ Security & privacy ⑤ Contracts & project
    compliance (swap ⑤ for Performance or Accessibility when the diff calls for it).
    Report only Critical/Important/Minor, file:line + fix suggestion.
-2. Synthesize (dedupe, keep strictest severity)
-3. No Critical/Important left → break (after ≥2 rounds)
-4. Else dispatch one fix-worker (§A verbatim), verify with targeted checks only
+   Reviewer budget (own, not the lane's): `{"soft": 30, "hard": 45}` + `timeoutMs: 900000`
+   (15 min). Coverage stays at five angles — the fix for slow review is a bounded reviewer,
+   not fewer angles (#4522: 8/8 reviewers burned 30 min re-deriving context). A read-only
+   reviewer running past 15 min is scope runaway; treat it like any other scope violation.
+2. Verify EVERY child's own `status` / `timedOut` / output before trusting the round — a
+   parent workflow `complete` with children `running` / `failed` / empty output is an
+   INCOMPLETE review, never a passed one (#4522: 8/8 silent fan-out failures). Re-dispatch
+   only the failed children.
+3. Synthesize (dedupe, keep strictest severity)
+4. No Critical/Important left → break (after ≥2 rounds)
+5. Else dispatch one fix-worker (§A verbatim), verify with targeted checks only
 
 ## Phase 2.5: Pre-CI Base Sync (MANDATORY GATE)
 

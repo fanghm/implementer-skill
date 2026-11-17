@@ -33,8 +33,12 @@ subagent({
 - Child fields on `runs.run`/`runs.all` items: `agent`, `task`, `context` (`fresh`/`fork`),
   `model`, `worktree`, `maxRuntimeMs`, `toolBudget`, `control: { needsAttentionAfterMs,
   notifyOn: ["needs_attention"] }`, `output`, `outputMode`, `gate`.
-- Never pass hard `turnBudget`/`toolBudget` to mutation-capable workers; use a narrow task plus a
-  generous `maxRuntimeMs` and `control.notifyOn` instead.
+- Never pass a hard `turnBudget` (or any `toolBudget` whose block list can stop a mutation
+  mid-flight) to mutation-capable workers; use a narrow task plus a generous `maxRuntimeMs`
+  and `control.notifyOn` instead. Exception: the lane-default `toolBudget: {"soft": 80,
+  "hard": 140}` (header.md) blocks READ-CLASS tools only (`read`/`grep`/`find`/`ls`) — it
+  caps exploration, never a write (#4522). Do not shrink it until the worker cannot read its
+  own diff; that yields fake-done, not scope control.
 - Agent names must resolve: run `subagent({ action: "list" })` first. When a
   `subagents.agentOverrides` entry exists, the shadow agent is named `{name}-override.{name}`
   (e.g. `scout-override.scout`, `worker-override.worker`, `reviewer-override.reviewer`) and the

@@ -205,3 +205,36 @@ gh run view <RUN_ID> --log-failed
 | [C] Your code bug | failures in files you changed; up to date | diagnose from logs, fix (fix-worker ok), push |
 | [D] Infrastructure | runner deaths, timeouts, network | `gh run rerun <RUN_ID> --failed` |
 | [E] Third-party / dependency | new upstream broke the job | BLOCKED with evidence. Do not code around it |
+
+---
+
+## §F Large-input tasks — read by slice, write while reading
+
+Greenfield features, huge docs, and cross-client contracts fail lanes not because writing is
+slow but because unbounded pre-reading eats the budget. The #4522 failure signature: 173 tool
+calls in 30 minutes, 97 of them `grep`/`sed`/`awk` path-finding, 0 edits, `git status` empty
+at kill time. The countermeasure has three parts — a read map, sliced reads, and
+interleaving (the Input Budget block in SKILL.md Phase 1 is the contract; this is the how).
+
+**Read map first — one line, at lane start, before any read:**
+"I will read X, Y, Z because the diff touches A, B." No map, no reads. If you cannot write
+the map, your lane scope is too vague — ask the implementer, don't explore.
+
+**Templates by task shape:**
+
+- **Greenfield feature (new table / pages / routes):** grep for the sibling implementation
+  (an existing model, route, or page of the same family) → read those siblings section by
+  section → write the skeleton (models + migration stub + empty handlers) BEFORE reading
+  anything else → then iterate per file: read one reference section, write one section.
+- **Huge doc (`development-checklist.md`, 921 lines):** `grep -n` the section headings first
+  → read ONLY the sections matching your lane's change type with offset/limit (Python →
+  migration/tests/formatting; web → i18n/a11y/React Doctor). Whole-file reads of big docs
+  are forbidden — that single read is the failure mode.
+- **Cross-client contract (backend + web/mobile):** grep the Pydantic schema, the TS type,
+  and the mobile model for the entity → read only those three contact surfaces → write the
+  schema change first, then propagate client types.
+
+**Interleave — don't batch.** After every consumed section, immediately write the code it
+justifies and commit (`wip:` is fine — the squash merge collects them). Reading with no
+commit past 0.5× budget means you are re-deriving context you already have; stop reading,
+write, commit.
