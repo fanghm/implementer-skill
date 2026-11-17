@@ -110,6 +110,7 @@ check_all() {
   check_one "paseo" "$PASEO_SKILL" || rc=1
   [ -f "$PI_REF" ] && echo "✓ pi reference present" || { echo "✗ pi reference missing: $PI_REF"; rc=1; }
   check_model_policy || rc=1
+  check_timeout_budget || rc=1
   return $rc
 }
 
@@ -173,6 +174,31 @@ check_pi_model_policy() {
       rc=1
     else
       echo "✓ pi model policy — $f pins $line"
+    fi
+  done
+  return $rc
+}
+
+# The 90-minute lane cap (#4522) must be enforced, not aspirational: any platform header
+# that declares timeoutMs must stay <= 5400000. sync.sh only hashes canonical bodies, so a
+# bad frontmatter value would otherwise surface only at dispatch time.
+check_timeout_budget() {
+  local rc=0 f line val
+  for f in "$ROOT"/platform/*/header.md; do
+    [ -f "$f" ] || continue
+    line="$(grep -m1 -E '^timeoutMs:[[:space:]]*[0-9]+' "$f" || true)"
+    [ -n "$line" ] || continue
+    val="$(printf '%s' "$line" | awk '{print $2}')"
+    if [[ ! "$val" =~ ^[0-9]+$ ]]; then
+      echo "✗ lane budget — $f timeoutMs is not a number: '$val'"
+      rc=1
+      continue
+    fi
+    if [ "$val" -gt 5400000 ]; then
+      echo "✗ lane budget — $f timeoutMs=$val exceeds the 90-minute cap (5400000)"
+      rc=1
+    else
+      echo "✓ lane budget — $f timeoutMs=$val within the 90-minute cap"
     fi
   done
   return $rc

@@ -4,6 +4,8 @@ description: Self-contained implementation subagent with review-fix loop via fix
 tools: read, write, edit, bash, grep, find, ls, subagent
 model: inherit
 thinking: high
+timeoutMs: 1800000
+toolBudget: {"soft": 80, "hard": 140}
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
